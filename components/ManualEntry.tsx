@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import type { Person } from "@/lib/types";
 
@@ -12,6 +12,16 @@ function nowTimeStr(): string {
 export default function ManualEntry() {
   const [person, setPerson] = useState<Person>("夫");
   const [date, setDate] = useState(() => new Date().toISOString().split("T")[0]);
+
+  // ページがフォーカスされた時に日付を当日に更新
+  useEffect(() => {
+    const handleFocus = () => {
+      setDate(new Date().toISOString().split("T")[0]);
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, []);
+
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState(nowTimeStr);
   const [loading, setLoading] = useState(false);
