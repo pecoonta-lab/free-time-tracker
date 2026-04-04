@@ -9,14 +9,22 @@ function nowTimeStr(): string {
   return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
 }
 
+function todayStr(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 export default function ManualEntry() {
   const [person, setPerson] = useState<Person>("夫");
-  const [date, setDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [date, setDate] = useState(todayStr);
 
   // ページがフォーカスされた時に日付を当日に更新
   useEffect(() => {
     const handleFocus = () => {
-      setDate(new Date().toISOString().split("T")[0]);
+      setDate(todayStr());
     };
     window.addEventListener("focus", handleFocus);
     return () => window.removeEventListener("focus", handleFocus);

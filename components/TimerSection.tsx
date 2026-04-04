@@ -68,7 +68,7 @@ function TimerCard({ person, activeTimer, onError }: TimerCardProps) {
             .insert({
               person,
               duration_minutes: minutes,
-              date: endedAt.toISOString().split("T")[0],
+              date: `${endedAt.getFullYear()}-${String(endedAt.getMonth() + 1).padStart(2, "0")}-${String(endedAt.getDate()).padStart(2, "0")}`,
               start_time: toTimeStr(startedAt),
               end_time: toTimeStr(endedAt),
               source: "timer",
