@@ -6,6 +6,8 @@ export interface TimeRecord {
   person: Person;
   duration_minutes: number;
   date: string;
+  start_time: string | null;
+  end_time: string | null;
   source: Source;
   created_at: string;
   updated_at: string;

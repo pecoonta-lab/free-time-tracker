@@ -17,6 +17,18 @@ function formatDate(dateStr: string): string {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
+function formatTime(time: string | null): string {
+  if (!time) return "--:--";
+  // "HH:MM:SS" or "HH:MM" → "HH:MM"
+  return time.slice(0, 5);
+}
+
+function calcMinutesFromTimes(start: string, end: string): number {
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  return eh * 60 + em - (sh * 60 + sm);
+}
+
 interface HistoryListProps {
   records: TimeRecord[];
 }
@@ -24,8 +36,8 @@ interface HistoryListProps {
 interface EditingState {
   id: string;
   date: string;
-  hours: number;
-  minutes: number;
+  startTime: string;
+  endTime: string;
 }
 
 export default function HistoryList({ records }: HistoryListProps) {
@@ -34,22 +46,30 @@ export default function HistoryList({ records }: HistoryListProps) {
   const [deleting, setDeleting] = useState<string | null>(null);
 
   const startEdit = (record: TimeRecord) => {
-    const h = Math.floor(record.duration_minutes / 60);
-    const m = record.duration_minutes % 60;
-    setEditing({ id: record.id, date: record.date, hours: h, minutes: m });
+    setEditing({
+      id: record.id,
+      date: record.date,
+      startTime: record.start_time ? record.start_time.slice(0, 5) : "09:00",
+      endTime: record.end_time ? record.end_time.slice(0, 5) : "10:00",
+    });
     setError(null);
   };
 
   const saveEdit = async () => {
     if (!editing) return;
-    const total = editing.hours * 60 + editing.minutes;
+    const total = calcMinutesFromTimes(editing.startTime, editing.endTime);
     if (total <= 0) {
-      setError("時間を入力してください");
+      setError("終了時刻は開始時刻より後にしてください");
       return;
     }
     const { error: updateError } = await supabase
       .from("time_records")
-      .update({ duration_minutes: total, date: editing.date })
+      .update({
+        duration_minutes: total,
+        date: editing.date,
+        start_time: editing.startTime,
+        end_time: editing.endTime,
+      })
       .eq("id", editing.id);
     if (updateError) {
       setError("更新に失敗しました");
@@ -98,38 +118,35 @@ export default function HistoryList({ records }: HistoryListProps) {
                     className="w-full border border-border rounded px-2 py-1 text-sm"
                   />
                   <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min={0}
-                      max={99}
-                      value={editing.hours}
-                      onChange={(e) =>
-                        setEditing({
-                          ...editing,
-                          hours: Math.max(0, parseInt(e.target.value) || 0),
-                        })
-                      }
-                      className="w-16 border border-border rounded px-2 py-1 text-sm text-center"
-                    />
-                    <span className="text-xs">時間</span>
-                    <input
-                      type="number"
-                      min={0}
-                      max={59}
-                      value={editing.minutes}
-                      onChange={(e) =>
-                        setEditing({
-                          ...editing,
-                          minutes: Math.max(
-                            0,
-                            Math.min(59, parseInt(e.target.value) || 0)
-                          ),
-                        })
-                      }
-                      className="w-16 border border-border rounded px-2 py-1 text-sm text-center"
-                    />
-                    <span className="text-xs">分</span>
+                    <div className="flex-1">
+                      <label className="text-xs text-muted block mb-1">開始</label>
+                      <input
+                        type="time"
+                        value={editing.startTime}
+                        onChange={(e) =>
+                          setEditing({ ...editing, startTime: e.target.value })
+                        }
+                        className="w-full border border-border rounded px-2 py-1 text-sm"
+                      />
+                    </div>
+                    <span className="mt-5 text-muted">→</span>
+                    <div className="flex-1">
+                      <label className="text-xs text-muted block mb-1">終了</label>
+                      <input
+                        type="time"
+                        value={editing.endTime}
+                        onChange={(e) =>
+                          setEditing({ ...editing, endTime: e.target.value })
+                        }
+                        className="w-full border border-border rounded px-2 py-1 text-sm"
+                      />
+                    </div>
                   </div>
+                  {editing.startTime && editing.endTime && calcMinutesFromTimes(editing.startTime, editing.endTime) > 0 && (
+                    <p className="text-xs text-muted text-center">
+                      = {formatDuration(calcMinutesFromTimes(editing.startTime, editing.endTime))}
+                    </p>
+                  )}
                   {error && (
                     <p className="text-xs text-danger">{error}</p>
                   )}
@@ -173,7 +190,7 @@ export default function HistoryList({ records }: HistoryListProps) {
               ) : (
                 /* 通常表示 */
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs text-muted">
                       {formatDate(record.date)}
                     </span>
@@ -186,6 +203,9 @@ export default function HistoryList({ records }: HistoryListProps) {
                     >
                       {record.person}
                     </span>
+                    <span className="text-xs text-muted">
+                      {formatTime(record.start_time)}〜{formatTime(record.end_time)}
+                    </span>
                     <span className="font-bold text-sm">
                       {formatDuration(record.duration_minutes)}
                     </span>
@@ -193,7 +213,7 @@ export default function HistoryList({ records }: HistoryListProps) {
                       {record.source === "timer" ? "タイマー" : "手入力"}
                     </span>
                   </div>
-                  <div className="flex gap-1">
+                  <div className="flex gap-1 shrink-0">
                     <button
                       onClick={() => startEdit(record)}
                       className="px-2 py-1 text-xs text-muted hover:text-foreground cursor-pointer"

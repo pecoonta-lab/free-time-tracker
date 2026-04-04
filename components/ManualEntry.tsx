@@ -39,6 +39,8 @@ export default function ManualEntry() {
       person,
       duration_minutes: total,
       date,
+      start_time: startTime,
+      end_time: endTime,
       source: "manual",
     });
 
