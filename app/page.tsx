@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { supabase } from "@/lib/supabase";
+import { useEffect, useState, useCallback, useRef } from "react";
 import type { TimeRecord, ActiveTimer } from "@/lib/types";
 import DiffSummary from "@/components/DiffSummary";
 import TimerSection from "@/components/TimerSection";
@@ -13,55 +12,70 @@ export default function Home() {
   const [records, setRecords] = useState<TimeRecord[]>([]);
   const [activeTimers, setActiveTimers] = useState<ActiveTimer[]>([]);
   const [loading, setLoading] = useState(true);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchRecords = useCallback(async () => {
-    const { data } = await supabase
-      .from("time_records")
-      .select("*")
-      .order("date", { ascending: false })
-      .order("created_at", { ascending: false });
-    if (data) setRecords(data as TimeRecord[]);
+    try {
+      const res = await fetch("/api/records");
+      if (!res.ok) return;
+      const data = await res.json();
+      setRecords(data as TimeRecord[]);
+    } catch {
+    }
   }, []);
 
   const fetchTimers = useCallback(async () => {
-    const { data } = await supabase.from("active_timers").select("*");
-    if (data) setActiveTimers(data as ActiveTimer[]);
+    try {
+      const res = await fetch("/api/timers");
+      if (!res.ok) return;
+      const data = await res.json();
+      setActiveTimers(data as ActiveTimer[]);
+    } catch {
+    }
   }, []);
 
-  // 初回ロード
-  useEffect(() => {
-    Promise.all([fetchRecords(), fetchTimers()]).then(() => setLoading(false));
+  const refresh = useCallback(async () => {
+    await Promise.all([fetchRecords(), fetchTimers()]);
   }, [fetchRecords, fetchTimers]);
 
-  // Realtime subscriptions
   useEffect(() => {
-    const recordsSub = supabase
-      .channel("time_records_changes")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "time_records" },
-        () => {
-          fetchRecords();
-        }
-      )
-      .subscribe();
+    refresh().then(() => setLoading(false));
+  }, [refresh]);
 
-    const timersSub = supabase
-      .channel("active_timers_changes")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "active_timers" },
-        () => {
-          fetchTimers();
+  useEffect(() => {
+    const startPolling = () => {
+      if (intervalRef.current) return;
+      intervalRef.current = setInterval(() => {
+        if (!document.hidden) {
+          refresh();
         }
-      )
-      .subscribe();
+      }, 5000);
+    };
+
+    const stopPolling = () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        stopPolling();
+      } else {
+        refresh();
+        startPolling();
+      }
+    };
+
+    startPolling();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
-      supabase.removeChannel(recordsSub);
-      supabase.removeChannel(timersSub);
+      stopPolling();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [fetchRecords, fetchTimers]);
+  }, [refresh]);
 
   const husbandTotal = records
     .filter((r) => r.person === "夫")
@@ -86,10 +100,10 @@ export default function Home() {
         activeTimers={activeTimers}
       />
       <div className="space-y-4">
-        <TimerSection activeTimers={activeTimers} />
-        <ManualEntry />
+        <TimerSection activeTimers={activeTimers} onRefresh={refresh} />
+        <ManualEntry onRefresh={refresh} />
         <TotalDisplay husbandTotal={husbandTotal} wifeTotal={wifeTotal} />
-        <HistoryList records={records} />
+        <HistoryList records={records} onRefresh={refresh} />
       </div>
     </main>
   );

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { supabase } from "@/lib/supabase";
 import type { ActiveTimer, Person } from "@/lib/types";
 
 function formatElapsed(ms: number): string {
@@ -20,9 +19,10 @@ interface TimerCardProps {
   person: Person;
   activeTimer: ActiveTimer | undefined;
   onError: (msg: string) => void;
+  onRefresh: () => Promise<void>;
 }
 
-function TimerCard({ person, activeTimer, onError }: TimerCardProps) {
+function TimerCard({ person, activeTimer, onError, onRefresh }: TimerCardProps) {
   const [now, setNow] = useState(() => Date.now());
   const [loading, setLoading] = useState(false);
   const isRunning = !!activeTimer;
@@ -39,7 +39,6 @@ function TimerCard({ person, activeTimer, onError }: TimerCardProps) {
     : 0;
 
   const handleToggle = useCallback(async () => {
-    // 二重実行防止
     if (processingRef.current) return;
     processingRef.current = true;
     setLoading(true);
@@ -51,45 +50,48 @@ function TimerCard({ person, activeTimer, onError }: TimerCardProps) {
         const elapsedMs = endedAt.getTime() - startedAt.getTime();
         const minutes = Math.round(elapsedMs / 60000);
 
-        // 先にタイマーを削除（UIに即座に反映させる）
-        const { error: deleteError } = await supabase
-          .from("active_timers")
-          .delete()
-          .eq("id", activeTimer.id);
-        if (deleteError) {
+        const deleteRes = await fetch(`/api/timers/${activeTimer.id}`, {
+          method: "DELETE",
+        });
+        if (!deleteRes.ok) {
           onError("タイマーの停止に失敗しました");
           return;
         }
 
-        // その後、記録を保存
         if (minutes > 0) {
-          const { error: insertError } = await supabase
-            .from("time_records")
-            .insert({
+          const insertRes = await fetch("/api/records", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
               person,
               duration_minutes: minutes,
               date: `${endedAt.getFullYear()}-${String(endedAt.getMonth() + 1).padStart(2, "0")}-${String(endedAt.getDate()).padStart(2, "0")}`,
               start_time: toTimeStr(startedAt),
               end_time: toTimeStr(endedAt),
               source: "timer",
-            });
-          if (insertError) {
+            }),
+          });
+          if (!insertRes.ok) {
             onError("記録の保存に失敗しました");
           }
         }
       } else {
-        const { error } = await supabase
-          .from("active_timers")
-          .insert({ person, started_at: new Date().toISOString() });
-        if (error) {
+        const res = await fetch("/api/timers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ person, started_at: new Date().toISOString() }),
+        });
+        if (!res.ok) {
           onError("タイマーの開始に失敗しました");
         }
       }
+
+      await onRefresh();
     } finally {
       setLoading(false);
       processingRef.current = false;
     }
-  }, [isRunning, activeTimer, person, onError]);
+  }, [isRunning, activeTimer, person, onError, onRefresh]);
 
   const startTime = isRunning
     ? new Date(activeTimer.started_at).toLocaleTimeString("ja-JP", {
@@ -124,9 +126,10 @@ function TimerCard({ person, activeTimer, onError }: TimerCardProps) {
 
 interface TimerSectionProps {
   activeTimers: ActiveTimer[];
+  onRefresh: () => Promise<void>;
 }
 
-export default function TimerSection({ activeTimers }: TimerSectionProps) {
+export default function TimerSection({ activeTimers, onRefresh }: TimerSectionProps) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -146,11 +149,13 @@ export default function TimerSection({ activeTimers }: TimerSectionProps) {
           person="夫"
           activeTimer={husbandTimer}
           onError={setError}
+          onRefresh={onRefresh}
         />
         <TimerCard
           person="妻"
           activeTimer={wifeTimer}
           onError={setError}
+          onRefresh={onRefresh}
         />
       </div>
       {error && (

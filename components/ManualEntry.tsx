@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { supabase } from "@/lib/supabase";
 import type { Person } from "@/lib/types";
 
 function nowTimeStr(): string {
@@ -17,11 +16,14 @@ function todayStr(): string {
   return `${y}-${m}-${d}`;
 }
 
-export default function ManualEntry() {
+interface ManualEntryProps {
+  onRefresh: () => Promise<void>;
+}
+
+export default function ManualEntry({ onRefresh }: ManualEntryProps) {
   const [person, setPerson] = useState<Person>("夫");
   const [date, setDate] = useState(todayStr);
 
-  // ページがフォーカスされた時に日付を当日に更新
   useEffect(() => {
     const handleFocus = () => {
       setDate(todayStr());
@@ -53,21 +55,31 @@ export default function ManualEntry() {
     setError(null);
     setSuccess(false);
 
-    const { error: insertError } = await supabase.from("time_records").insert({
-      person,
-      duration_minutes: total,
-      date,
-      start_time: startTime,
-      end_time: endTime,
-      source: "manual",
-    });
+    try {
+      const res = await fetch("/api/records", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          person,
+          duration_minutes: total,
+          date,
+          start_time: startTime,
+          end_time: endTime,
+          source: "manual",
+        }),
+      });
 
-    setLoading(false);
-    if (insertError) {
+      if (!res.ok) {
+        setError("保存に失敗しました");
+      } else {
+        setSuccess(true);
+        setTimeout(() => setSuccess(false), 2000);
+        await onRefresh();
+      }
+    } catch {
       setError("保存に失敗しました");
-    } else {
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 2000);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -81,7 +93,6 @@ export default function ManualEntry() {
     <div className="border border-border rounded-xl p-4">
       <h2 className="text-sm font-bold text-muted mb-3">手入力</h2>
       <form onSubmit={handleSubmit} className="space-y-3">
-        {/* 対象者トグル */}
         <div className="flex rounded-lg overflow-hidden border border-border">
           {(["夫", "妻"] as Person[]).map((p) => (
             <button
@@ -99,7 +110,6 @@ export default function ManualEntry() {
           ))}
         </div>
 
-        {/* 日付 */}
         <input
           type="date"
           value={date}
@@ -107,7 +117,6 @@ export default function ManualEntry() {
           className="w-full border border-border rounded-lg px-3 py-2 text-sm"
         />
 
-        {/* 開始時刻・終了時刻 */}
         <div className="flex items-center gap-2">
           <div className="flex-1">
             <label className="text-xs text-muted block mb-1">開始</label>
@@ -130,7 +139,6 @@ export default function ManualEntry() {
           </div>
         </div>
 
-        {/* 自動計算結果 */}
         {diffLabel && (
           <p className="text-sm text-center text-muted">= {diffLabel}</p>
         )}

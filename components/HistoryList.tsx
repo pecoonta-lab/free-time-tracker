@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { supabase } from "@/lib/supabase";
 import type { TimeRecord } from "@/lib/types";
 
 function formatDuration(minutes: number): string {
@@ -19,7 +18,6 @@ function formatDate(dateStr: string): string {
 
 function formatTime(time: string | null): string {
   if (!time) return "--:--";
-  // "HH:MM:SS" or "HH:MM" → "HH:MM"
   return time.slice(0, 5);
 }
 
@@ -31,6 +29,7 @@ function calcMinutesFromTimes(start: string, end: string): number {
 
 interface HistoryListProps {
   records: TimeRecord[];
+  onRefresh: () => Promise<void>;
 }
 
 interface EditingState {
@@ -40,7 +39,7 @@ interface EditingState {
   endTime: string;
 }
 
-export default function HistoryList({ records }: HistoryListProps) {
+export default function HistoryList({ records, onRefresh }: HistoryListProps) {
   const [editing, setEditing] = useState<EditingState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -62,20 +61,26 @@ export default function HistoryList({ records }: HistoryListProps) {
       setError("終了時刻は開始時刻より後にしてください");
       return;
     }
-    const { error: updateError } = await supabase
-      .from("time_records")
-      .update({
-        duration_minutes: total,
-        date: editing.date,
-        start_time: editing.startTime,
-        end_time: editing.endTime,
-      })
-      .eq("id", editing.id);
-    if (updateError) {
+    try {
+      const res = await fetch(`/api/records/${editing.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          duration_minutes: total,
+          date: editing.date,
+          start_time: editing.startTime,
+          end_time: editing.endTime,
+        }),
+      });
+      if (!res.ok) {
+        setError("更新に失敗しました");
+      } else {
+        setEditing(null);
+        setError(null);
+        await onRefresh();
+      }
+    } catch {
       setError("更新に失敗しました");
-    } else {
-      setEditing(null);
-      setError(null);
     }
   };
 
@@ -84,11 +89,16 @@ export default function HistoryList({ records }: HistoryListProps) {
   };
 
   const confirmDelete = async (id: string) => {
-    const { error: deleteError } = await supabase
-      .from("time_records")
-      .delete()
-      .eq("id", id);
-    if (deleteError) {
+    try {
+      const res = await fetch(`/api/records/${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        setError("削除に失敗しました");
+      } else {
+        await onRefresh();
+      }
+    } catch {
       setError("削除に失敗しました");
     }
     setDeleting(null);
@@ -107,7 +117,6 @@ export default function HistoryList({ records }: HistoryListProps) {
               className="border border-border rounded-lg p-3"
             >
               {editing?.id === record.id ? (
-                /* 編集モード */
                 <div className="space-y-2">
                   <input
                     type="date"
@@ -169,7 +178,6 @@ export default function HistoryList({ records }: HistoryListProps) {
                   </div>
                 </div>
               ) : deleting === record.id ? (
-                /* 削除確認 */
                 <div className="text-center space-y-2">
                   <p className="text-sm">この記録を削除しますか？</p>
                   <div className="flex gap-2">
@@ -188,7 +196,6 @@ export default function HistoryList({ records }: HistoryListProps) {
                   </div>
                 </div>
               ) : (
-                /* 通常表示 */
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs text-muted">
